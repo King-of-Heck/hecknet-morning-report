@@ -404,14 +404,25 @@ def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed
         x_out = (PAPER_PX - aww_img_prepared.width) // 2
         output.paste(aww_img_prepared, (x_out, paste_y_out))
 
+    footer_font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
+    footer_text = "Knock 'em Dead King!"
+    draw_out = ImageDraw.Draw(output)
     if aww_img_prepared:
-        final_h = int(aww_paste_y_hires / S) + aww_img_prepared.size[1] + line_h
+        footer_y = int(aww_paste_y_hires / S) + aww_img_prepared.size[1] + 4
     else:
-        final_h = int(y / S) + line_h
+        footer_y = int(y / S) + 4
+    tw = footer_font.getlength(footer_text)
+    footer_x = (PAPER_PX - tw) / 2
+    draw_out.text((footer_x, footer_y), footer_text, font=footer_font, fill="black")
+
+    footer_line_h = FONT_SIZE + 8
+    if aww_img_prepared:
+        final_h = int(aww_paste_y_hires / S) + aww_img_prepared.size[1] + footer_line_h * 2
+    else:
+        final_h = int(y / S) + footer_line_h * 2
     output = output.crop((0, 0, out_w, final_h))
 
     return output
-    add("Have a great day!", align="center")
 
 def send_image_to_printer(pil_img):
     """
