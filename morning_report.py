@@ -1,7 +1,8 @@
 """
+weather_receipt.py
+------------------
 Morning Report
 """
-
 
 import io
 import requests
@@ -170,6 +171,15 @@ def fetch_jays_game():
     JAYS_TEAM_ID = 141
     today_str = date.today().strftime("%Y-%m-%d")
 
+    MLB_ABBREVS = {
+        108: "LAA", 109: "ARI", 110: "BAL", 111: "BOS", 112: "CHC",
+        113: "CIN", 114: "CLE", 115: "COL", 116: "DET", 117: "HOU",
+        118: "KC",  119: "LAD", 120: "WSH", 121: "NYM", 133: "OAK",
+        134: "PIT", 135: "SD",  136: "SEA", 137: "SF",  138: "STL",
+        139: "TB",  140: "TEX", 141: "TOR", 142: "MIN", 143: "PHI",
+        144: "ATL", 145: "CWS", 146: "MIA", 147: "NYY", 158: "MIL",
+    }
+
     try:
         url = "https://statsapi.mlb.com/api/v1/schedule"
         params = {
@@ -191,10 +201,11 @@ def fetch_jays_game():
 
         game = games[0]
 
-        home_team = game["teams"]["home"]["team"]["name"]
-        away_team = game["teams"]["away"]["team"]["name"]
-        jays_are_home = (game["teams"]["home"]["team"]["id"] == JAYS_TEAM_ID)
-        opponent = away_team if jays_are_home else home_team
+        home_team_id = game["teams"]["home"]["team"]["id"]
+        away_team_id = game["teams"]["away"]["team"]["id"]
+        jays_are_home = (home_team_id == JAYS_TEAM_ID)
+        opp_id   = away_team_id if jays_are_home else home_team_id
+        opp_abbr = MLB_ABBREVS.get(opp_id, game["teams"]["away" if jays_are_home else "home"]["team"]["abbreviation"])
         home_away = "vs" if jays_are_home else "@"
 
         game_time_utc = game.get("gameDate")  # e.g. "2025-05-01T17:07:00Z"
@@ -203,7 +214,7 @@ def fetch_jays_game():
             dt_utc = dt_utc.replace(tzinfo=timezone.utc)
             et_offset = timedelta(hours=-4)  # EDT (UTC-4); change to -5 for EST
             dt_et = dt_utc + et_offset
-            time_et = dt_et.strftime("%-I:%M %p ET").lstrip("0") or dt_et.strftime("%I:%M %p ET")
+            time_et = dt_et.strftime("%I:%M %p ET").lstrip("0") or "12:00 AM ET"
         else:
             time_et = "TBD"
 
@@ -216,11 +227,9 @@ def fetch_jays_game():
         sp_jays = pitcher_name("home" if jays_are_home else "away")
         sp_opp  = pitcher_name("away" if jays_are_home else "home")
 
-        short_opp = opponent.replace("Toronto Blue Jays", "Blue Jays")
-
         return {
             "home_away": home_away,
-            "opponent":  short_opp,
+            "opp_abbr":  opp_abbr,
             "time_et":   time_et,
             "sp_jays":   sp_jays,
             "sp_opp":    sp_opp,
@@ -276,10 +285,13 @@ def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed
     def div():
         add(DIVIDER)
 
-    add("TORONTO",        bold=True,  align="center")
-    add("Daily Weather",  bold=True,  align="center")
+    add("HECKNET",        bold=True,  align="center")
+    add("MORNING REPORT",  bold=True,  align="center")
     add(now,                          align="center")
     add(printed,                      align="center")
+    div()
+
+    add("Toronto Weather", bold=True, align="center")
     div()
 
     for label, slot in [
@@ -292,8 +304,6 @@ def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed
         add(f"  Temp:   {slot['temp']}\u00b0C  (feels {slot['feels']}\u00b0C)")
         add(f"  Precip: {slot['precip']}% chance")
         div()
-
-    add("Have a great day!", align="center")
 
     if wnn_title:
         div()
@@ -332,11 +342,11 @@ def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed
 
     if jays_game:
         add("BLUE JAYS", bold=True, align="center")
-        matchup = f"TOR {jays_game['home_away']} {jays_game['opponent']}"
+        matchup = f"TOR {jays_game['home_away']} {jays_game['opp_abbr']}"
         add(matchup, align="center")
         add(f"  First pitch: {jays_game['time_et']}")
         add(f"  TOR: {jays_game['sp_jays']}")
-        add(f"  OPP: {jays_game['sp_opp']}")
+        add(f"  {jays_game['opp_abbr']}: {jays_game['sp_opp']}")
         if jays_game.get("double"):
             add("  (Doubleheader today!)")
         div()
@@ -362,6 +372,7 @@ def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed
         for wl in wrapped:
             add(wl, align="center")
         aww_img_prepared = prepare_aww_image(aww_pil, width_px=TEXT_PX)
+
 
     aww_hi_h = (aww_img_prepared.size[1] * S + line_h) if aww_img_prepared else 0
     total_h  = len(ops) * line_h + aww_hi_h + line_h * 3
@@ -400,7 +411,7 @@ def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed
     output = output.crop((0, 0, out_w, final_h))
 
     return output
-
+    add("Have a great day!", align="center")
 
 def send_image_to_printer(pil_img):
     """
