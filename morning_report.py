@@ -375,7 +375,8 @@ def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed
 
 
     aww_hi_h = (aww_img_prepared.size[1] * S + line_h) if aww_img_prepared else 0
-    total_h  = len(ops) * line_h + aww_hi_h + line_h * 3
+    footer_line_h = FONT_SIZE + 8
+    total_h  = len(ops) * line_h + aww_hi_h + line_h * 3 + footer_line_h * 2
 
     hi_res = Image.new("RGB", (paper_w, total_h), "white")
     draw   = ImageDraw.Draw(hi_res)
@@ -415,7 +416,6 @@ def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed
     footer_x = (PAPER_PX - tw) / 2
     draw_out.text((footer_x, footer_y), footer_text, font=footer_font, fill="black")
 
-    footer_line_h = FONT_SIZE + 8
     if aww_img_prepared:
         final_h = int(aww_paste_y_hires / S) + aww_img_prepared.size[1] + footer_line_h * 2
     else:
