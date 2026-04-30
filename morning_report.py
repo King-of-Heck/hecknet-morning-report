@@ -1,28 +1,7 @@
 """
-weather_receipt.py
-------------------
-Fetches today's Toronto weather (morning / noon / evening) from Open-Meteo
-and the top image post from r/aww, then prints a formatted receipt on a
-thermal printer.
-
-Hybrid approach:
-  - Receipt content is rendered as a Pillow image at 4x scale (then
-    downsampled) for crisp, dark text — sent via win32print
-  - r/aww image is contrast-boosted and Floyd-Steinberg dithered
-  - ESC/POS cut command is sent separately as a raw write after printing
-
-Run once manually to test, then schedule with Windows Task Scheduler at 8:00 AM.
-
-Setup
------
-1. Install dependencies:
-       pip install requests pillow pywin32
-
-2. Run:
-       python weather_receipt.py
-
-3. Schedule daily at 8:00 AM — see TASK SCHEDULER SETUP at the bottom.
+Morning Report
 """
+
 
 import io
 import requests
@@ -179,6 +158,80 @@ def fetch_wnn_story():
         return None, None
 
 
+def fetch_jays_game():
+    """
+    Fetches today's Blue Jays game from the MLB Stats API (no key required).
+    Returns a dict with opponent, time_et, home_away, sp_jays, sp_opp,
+    or None if no game today.
+    """
+    import xml.etree.ElementTree as ET
+    from datetime import timezone, timedelta
+
+    JAYS_TEAM_ID = 141
+    today_str = date.today().strftime("%Y-%m-%d")
+
+    try:
+        url = "https://statsapi.mlb.com/api/v1/schedule"
+        params = {
+            "sportId": 1,
+            "teamId": JAYS_TEAM_ID,
+            "date": today_str,
+            "hydrate": "probablePitcher(note),team",
+        }
+        r = requests.get(url, params=params, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+
+        dates = data.get("dates", [])
+        if not dates:
+            return None
+        games = dates[0].get("games", [])
+        if not games:
+            return None
+
+        game = games[0]
+
+        home_team = game["teams"]["home"]["team"]["name"]
+        away_team = game["teams"]["away"]["team"]["name"]
+        jays_are_home = (game["teams"]["home"]["team"]["id"] == JAYS_TEAM_ID)
+        opponent = away_team if jays_are_home else home_team
+        home_away = "vs" if jays_are_home else "@"
+
+        game_time_utc = game.get("gameDate")  # e.g. "2025-05-01T17:07:00Z"
+        if game_time_utc:
+            dt_utc = datetime.strptime(game_time_utc, "%Y-%m-%dT%H:%M:%SZ")
+            dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+            et_offset = timedelta(hours=-4)  # EDT (UTC-4); change to -5 for EST
+            dt_et = dt_utc + et_offset
+            time_et = dt_et.strftime("%-I:%M %p ET").lstrip("0") or dt_et.strftime("%I:%M %p ET")
+        else:
+            time_et = "TBD"
+
+        def pitcher_name(side):
+            pp = game["teams"][side].get("probablePitcher")
+            if pp:
+                return pp.get("fullName", "TBD")
+            return "TBD"
+
+        sp_jays = pitcher_name("home" if jays_are_home else "away")
+        sp_opp  = pitcher_name("away" if jays_are_home else "home")
+
+        short_opp = opponent.replace("Toronto Blue Jays", "Blue Jays")
+
+        return {
+            "home_away": home_away,
+            "opponent":  short_opp,
+            "time_et":   time_et,
+            "sp_jays":   sp_jays,
+            "sp_opp":    sp_opp,
+            "double":    len(games) > 1,
+        }
+
+    except Exception as e:
+        print(f"Warning: could not fetch Jays game — {e}")
+        return None
+
+
 def prepare_aww_image(pil_img, width_px=TEXT_PX):
     """
     Resize, boost contrast + sharpness, then Floyd-Steinberg dither to
@@ -201,7 +254,7 @@ def load_font(bold=False):
     except OSError:
         return ImageFont.load_default()
 
-def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed, wnn_title=None, wnn_summary=None):
+def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed, wnn_title=None, wnn_summary=None, jays_game=None):
     """
     Renders receipt at 4x resolution then downsamples to OUTPUT resolution.
     This gives much crisper, darker text than rendering at output res directly.
@@ -276,6 +329,19 @@ def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed
             for wl in wrapped:
                 add(wl)
         div()
+
+    if jays_game:
+        add("BLUE JAYS", bold=True, align="center")
+        matchup = f"TOR {jays_game['home_away']} {jays_game['opponent']}"
+        add(matchup, align="center")
+        add(f"  First pitch: {jays_game['time_et']}")
+        add(f"  TOR: {jays_game['sp_jays']}")
+        add(f"  OPP: {jays_game['sp_opp']}")
+        if jays_game.get("double"):
+            add("  (Doubleheader today!)")
+        div()
+    elif jays_game is None:
+        pass
 
     aww_img_prepared = None
     if aww_pil:
@@ -371,6 +437,9 @@ def print_receipt():
     print("Fetching WNN story...")
     wnn_title, wnn_summary = fetch_wnn_story()
 
+    print("Fetching Blue Jays game...")
+    jays_game = fetch_jays_game()
+
     print("Fetching r/aww image...")
     aww_title, aww_pil = fetch_aww_image()
 
@@ -378,7 +447,7 @@ def print_receipt():
     printed = datetime.now().strftime("Printed %I:%M %p")
 
     print("Rendering receipt...")
-    receipt_img = build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed, wnn_title, wnn_summary)
+    receipt_img = build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed, wnn_title, wnn_summary, jays_game)
 
     print("Sending to printer...")
     send_image_to_printer(receipt_img)
