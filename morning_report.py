@@ -5,6 +5,7 @@ Morning Report
 """
 
 import io
+import time
 import requests
 import win32print
 import win32ui
@@ -31,6 +32,9 @@ TEXT_PX      = PAPER_PX - 2 * MARGIN_PX
 LATITUDE     = 43.6532
 LONGITUDE    = -79.3832
 TIMEZONE     = "America/Toronto"
+
+WEATHER_RETRY_ATTEMPTS = 3    # how many times to try before giving up
+WEATHER_RETRY_WAIT     = 60   # seconds to wait between attempts
 
 MORNING_HOUR = 8
 NOON_HOUR    = 12
@@ -66,9 +70,21 @@ def fetch_weather():
         "timezone":           TIMEZONE,
         "forecast_days":      1,
     }
-    r = requests.get(url, params=params, timeout=15)
-    r.raise_for_status()
-    return r.json()
+    last_error = None
+    for attempt in range(1, WEATHER_RETRY_ATTEMPTS + 1):
+        try:
+            r = requests.get(url, params=params, timeout=15)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            last_error = e
+            if attempt < WEATHER_RETRY_ATTEMPTS:
+                print(f"  Weather fetch failed (attempt {attempt}/{WEATHER_RETRY_ATTEMPTS}): {e}")
+                print(f"  Retrying in {WEATHER_RETRY_WAIT}s...")
+                time.sleep(WEATHER_RETRY_WAIT)
+            else:
+                print(f"  Weather fetch failed after {WEATHER_RETRY_ATTEMPTS} attempts.")
+    raise last_error
 
 def extract_slot(data, hour):
     times = data["hourly"]["time"]
