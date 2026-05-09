@@ -279,6 +279,50 @@ def load_font(bold=False):
     except OSError:
         return ImageFont.load_default()
 
+# EMOJI GLYPH HELPERS
+# Courier lacks emoji/symbol glyphs so we render them separately using
+
+# Tune these to taste (all values are at 4x hi-res scale; divide by 4 for
+# approximate printed pixels).
+SKULL_FONT_SIZE = 24   # pt — size of 💀 skull glyphs
+SKULL_Y_OFFSET  = 40   # px at 4x — shifts skulls DOWN relative to text baseline
+RADS_FONT_SIZE  = 26   # pt — size of ☢ radioactivity glyphs
+RADS_Y_OFFSET   = 36   # px at 4x — shifts rads symbol DOWN relative to text baseline
+
+_EMOJI_FONT_CANDIDATES = [
+    "seguiemj.ttf",                  # Segoe UI Emoji — ships with Windows 10+
+    "C:/Windows/Fonts/seguiemj.ttf", # explicit path fallback
+    "seguisym.ttf",                  # Segoe UI Symbol — older fallback (no colour emoji)
+]
+
+def _load_emoji_font(size_pt: int):
+    for path in _EMOJI_FONT_CANDIDATES:
+        try:
+            return ImageFont.truetype(path, size_pt * RENDER_SCALE)
+        except OSError:
+            continue
+    return load_font(bold=True)   # last resort: Courier (will render as box)
+
+def _draw_flanked_header(draw, text: str, glyph: str,
+                         font_text, font_glyph,
+                         paper_w: int, y: int, y_offset: int):
+    """
+    Render  <glyph>  <text>  <glyph>  centred on the line.
+    font_text is used for the label, font_glyph for the flanking symbols.
+    y_offset shifts the glyphs DOWN relative to the text y so they sit level.
+    """
+    gap     = int(font_text.size * 0.4)
+    glyph_w = int(font_glyph.getlength(glyph))
+    text_w  = int(font_text.getlength(text))
+    total_w = glyph_w + gap + text_w + gap + glyph_w
+
+    x = (paper_w - total_w) // 2
+    draw.text((x, y + y_offset), glyph, font=font_glyph, fill="black")
+    x += glyph_w + gap
+    draw.text((x, y), text, font=font_text, fill="black")
+    x += text_w + gap
+    draw.text((x, y + y_offset), glyph, font=font_glyph, fill="black")
+
 def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed, wnn_title=None, wnn_summary=None, jays_game=None):
     """
     Renders receipt at 4x resolution then downsamples to OUTPUT resolution.
@@ -293,6 +337,9 @@ def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed
     font_n = load_font(bold=False)
     font_b = load_font(bold=True)
 
+    font_skull = _load_emoji_font(SKULL_FONT_SIZE)
+    font_rads  = _load_emoji_font(RADS_FONT_SIZE)
+
     DIVIDER = "─" * int(text_w / (FONT_SIZE * S * 0.62))
 
     ops = []
@@ -301,8 +348,8 @@ def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed
     def div():
         add(DIVIDER)
 
-    add("HECKNET",        bold=True,  align="center")
-    add("MORNING REPORT",  bold=True,  align="center")
+    add("",  align="center")   # → 💀 HECKNET 💀
+    add("MORNING REPORT", bold=True, align="center")
     add(now,                          align="center")
     add(printed,                      align="center")
     div()
@@ -321,9 +368,11 @@ def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed
         add(f"  Precip: {slot['precip']}% chance")
         div()
 
+    nuclear_header_op_idx = None
     if wnn_title:
         div()
-        add("NUCLEAR NEWS", bold=True, align="center")
+        nuclear_header_op_idx = len(ops)
+        add("",  align="center")   # → ☢ NUCLEAR NEWS ☢
         words = wnn_title.split()
         line, wrapped = "", []
         for word in words:
@@ -389,22 +438,30 @@ def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed
             add(wl, align="center")
         aww_img_prepared = prepare_aww_image(aww_pil, width_px=TEXT_PX)
 
-
+    top_pad = max(SKULL_Y_OFFSET, RADS_Y_OFFSET)
     aww_hi_h = (aww_img_prepared.size[1] * S + line_h) if aww_img_prepared else 0
     footer_line_h = FONT_SIZE + 8
-    total_h  = len(ops) * line_h + aww_hi_h + line_h * 3 + footer_line_h * 2
+    total_h  = len(ops) * line_h + aww_hi_h + line_h * 3 + footer_line_h * 2 + top_pad
 
     hi_res = Image.new("RGB", (paper_w, total_h), "white")
     draw   = ImageDraw.Draw(hi_res)
-    y      = margin // 2
+    y      = margin // 2 + top_pad
 
-    for text, font, align in ops:
+    for i, (text, font, align) in enumerate(ops):
         if align == "center":
             tw = font.getlength(text)
             x  = (paper_w - tw) / 2
         else:
             x = margin
         draw.text((x, y), text, font=font, fill="black")
+
+        if i == 0:
+            _draw_flanked_header(draw, "HECKNET", "\U0001F480",
+                                 font_b, font_skull, paper_w, y, SKULL_Y_OFFSET)
+        if nuclear_header_op_idx is not None and i == nuclear_header_op_idx:
+            _draw_flanked_header(draw, "NUCLEAR NEWS", "\u2622",
+                                 font_b, font_rads, paper_w, y, RADS_Y_OFFSET)
+
         y += line_h
 
     aww_paste_y_hires = y  # where the image goes in hi-res coords
