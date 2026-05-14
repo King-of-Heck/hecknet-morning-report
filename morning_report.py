@@ -185,6 +185,8 @@ def fetch_wnn_story():
 
     last_seen_url = _load_wnn_seen()
     last_seen_norm = _normalise_url(last_seen_url) if last_seen_url else None
+    print(f"  WNN: last seen (raw)  = {last_seen_url}")
+    print(f"  WNN: last seen (norm) = {last_seen_norm}")
 
     try:
         r = requests.get(
@@ -195,15 +197,23 @@ def fetch_wnn_story():
         r.raise_for_status()
         root = ET.fromstring(r.content)
         items = root.findall(".//item")
+        print(f"  WNN: {len(items)} item(s) found in feed")
+        for i, it in enumerate(items):
+            u = (it.findtext("link") or it.findtext("guid") or "").strip()
+            t = (it.findtext("title") or "").strip()
+            print(f"  WNN: [{i}] norm={_normalise_url(u)}")
+            print(f"           title={t[:70]}")
         if not items:
             return None, None
 
         chosen = None
         for item in items:
             url = (item.findtext("link") or item.findtext("guid") or "").strip()
-            if url and last_seen_norm and _normalise_url(url) == last_seen_norm:
+            url_norm = _normalise_url(url)
+            if url and last_seen_norm and url_norm == last_seen_norm:
                 print(f"  WNN: skipping already-seen story ({url[:60]}...)")
                 continue
+            print(f"  WNN: selected story ({url[:60]}...)")
             chosen = item
             chosen_url = url
             break
