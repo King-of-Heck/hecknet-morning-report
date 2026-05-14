@@ -5,6 +5,8 @@ Morning Report
 """
 
 import io
+import json
+import os
 import time
 import requests
 import win32print
@@ -148,28 +150,69 @@ def fetch_aww_image():
     return None, None
 
 
+_WNN_SEEN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wnn_last_seen.json")
+
+def _load_wnn_seen() -> str | None:
+    try:
+        with open(_WNN_SEEN_FILE, "r") as f:
+            return json.load(f).get("last_url")
+    except Exception:
+        return None
+
+def _save_wnn_seen(url: str):
+    try:
+        with open(_WNN_SEEN_FILE, "w") as f:
+            json.dump({"last_url": url}, f)
+    except Exception as e:
+        print(f"Warning: could not save WNN seen file — {e}")
+
 def fetch_wnn_story():
     """
-    Fetches the most recently published story from World Nuclear News RSS feed.
-    Returns (title, summary) or (None, None) on failure.
+    Fetches the most recently published story from World Nuclear News RSS feed
+    that hasn't been printed before. Skips the last seen URL and picks the next
+    newest story instead. Returns (title, summary) or (None, None) on failure.
     """
     import xml.etree.ElementTree as ET
+    import re
+
+    last_seen_url = _load_wnn_seen()
+
     try:
         r = requests.get(
             "https://world-nuclear-news.org/rss",
-            headers={"User-Agent": "weather-receipt/1.0"},
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"},
             timeout=15,
         )
         r.raise_for_status()
         root = ET.fromstring(r.content)
-        item = root.find(".//item")
-        if item is None:
+        items = root.findall(".//item")
+        if not items:
             return None, None
-        title   = (item.findtext("title") or "").strip()
-        summary = (item.findtext("description") or "").strip()
-        import re
+
+        chosen = None
+        for item in items:
+            url = (item.findtext("link") or item.findtext("guid") or "").strip()
+            if url and url == last_seen_url:
+                print(f"  WNN: skipping already-seen story ({url[:60]}...)")
+                continue
+            chosen = item
+            chosen_url = url
+            break
+
+        if chosen is None:
+            chosen = items[0]
+            chosen_url = (chosen.findtext("link") or chosen.findtext("guid") or "").strip()
+            print("WNN: all stories already seen — reprinting newest.")
+
+        title   = (chosen.findtext("title") or "").strip()
+        summary = (chosen.findtext("description") or "").strip()
         summary = re.sub(r"<[^>]+>", "", summary).strip()
+
+        if chosen_url:
+            _save_wnn_seen(chosen_url)
+
         return title, summary
+
     except Exception as e:
         print(f"Warning: could not fetch WNN story — {e}")
         return None, None
