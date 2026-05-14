@@ -176,73 +176,79 @@ def _save_wnn_seen(url: str):
 
 def fetch_wnn_story():
     """
-    Fetches the most recently published story from World Nuclear News RSS feed
-    that hasn't been printed before. Skips the last seen URL and picks the next
-    newest story instead. Returns (title, summary) or (None, None) on failure.
+    Scrapes the WNN homepage for the latest unseen article, then fetches
+    the article page itself to pull a summary. Bypasses the stale RSS cache.
+    Returns (title, summary) or (None, None) on failure.
     """
-    import xml.etree.ElementTree as ET
+    from bs4 import BeautifulSoup
     import re
 
-    last_seen_url = _load_wnn_seen()
+    WNN_BASE = "https://www.world-nuclear-news.org"
+    HEADERS  = {
+        "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Cache-Control":   "no-cache",
+    }
+
+    last_seen_url  = _load_wnn_seen()
     last_seen_norm = _normalise_url(last_seen_url) if last_seen_url else None
-    print(f"  WNN: last seen (raw)  = {last_seen_url}")
     print(f"  WNN: last seen (norm) = {last_seen_norm}")
 
     try:
-        r = requests.get(
-            "https://world-nuclear-news.org/rss",
-            params={"_": int(time.time())},   # cache-buster
-            headers={
-                "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                "Cache-Control":   "no-cache, no-store, must-revalidate",
-                "Pragma":          "no-cache",
-                "Accept":          "application/rss+xml, application/xml, text/xml, */*",
-            },
-            timeout=15,
-        )
+        r = requests.get(WNN_BASE + "/", headers=HEADERS, timeout=15)
         r.raise_for_status()
-        root = ET.fromstring(r.content)
-        items = root.findall(".//item")
-        print(f"  WNN: {len(items)} item(s) found in feed")
-        for i, it in enumerate(items[:5]):
-            u = (it.findtext("link") or it.findtext("guid") or "").strip()
-            t = (it.findtext("title") or "").strip()
-            d = (it.findtext("pubDate") or "").strip()
-            print(f"  WNN: [{i}] {d}")
-            print(f"           norm={_normalise_url(u)}")
-            print(f"           title={t[:70]}")
-        if not items:
-            return None, None
-
-        chosen = None
-        for item in items:
-            url = (item.findtext("link") or item.findtext("guid") or "").strip()
-            url_norm = _normalise_url(url)
-            if url and last_seen_norm and url_norm == last_seen_norm:
-                print(f"  WNN: skipping already-seen story ({url[:60]}...)")
-                continue
-            print(f"  WNN: selected story ({url[:60]}...)")
-            chosen = item
-            chosen_url = url
-            break
-
-        if chosen is None:
-            chosen = items[0]
-            chosen_url = (chosen.findtext("link") or chosen.findtext("guid") or "").strip()
-            print("WNN: all stories already seen — reprinting newest.")
-
-        title   = (chosen.findtext("title") or "").strip()
-        summary = (chosen.findtext("description") or "").strip()
-        summary = re.sub(r"<[^>]+>", "", summary).strip()
-
-        if chosen_url:
-            _save_wnn_seen(chosen_url)
-
-        return title, summary
-
     except Exception as e:
-        print(f"Warning: could not fetch WNN story — {e}")
+        print(f"WNN: homepage fetch failed — {e}")
         return None, None
+
+    soup  = BeautifulSoup(r.content, "html.parser")
+    links = soup.find_all("a", class_="news_box_link")
+    print(f"  WNN: {len(links)} article links found on homepage")
+
+    chosen_url   = None
+    chosen_title = None
+    for a in links:
+        href = a.get("href", "").strip()
+        if not href.startswith("/articles/"):
+            continue
+        full_url  = WNN_BASE + href
+        full_norm = _normalise_url(full_url)
+
+        title_div = a.find("div", class_="news_list_title")
+        title     = title_div.get_text(strip=True) if title_div else ""
+        if not title:
+            continue
+
+        print(f"WNN: checking — {title[:60]}")
+        if last_seen_norm and full_norm == last_seen_norm:
+            print(f"  WNN: skipping already-seen story")
+            continue
+
+        chosen_url   = full_url
+        chosen_title = title
+        print(f"WNN: selected — {title[:60]}")
+        break
+
+    if not chosen_url:
+        print("  WNN: no new stories found on homepage.")
+        return None, None
+
+    summary = ""
+    try:
+        ar = requests.get(chosen_url, headers=HEADERS, timeout=15)
+        ar.raise_for_status()
+        asoup = BeautifulSoup(ar.content, "html.parser")
+        for p in asoup.find_all("p"):
+            text = p.get_text(strip=True)
+            if len(text) > 60:   # skip tiny/empty paragraphs
+                summary = text
+                break
+    except Exception as e:
+        print(f"WNN: article fetch failed — {e}")
+
+    _save_wnn_seen(chosen_url)
+    return chosen_title, summary
 
 
 def fetch_jays_game():
