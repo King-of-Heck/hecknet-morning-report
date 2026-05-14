@@ -152,6 +152,14 @@ def fetch_aww_image():
 
 _WNN_SEEN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wnn_last_seen.json")
 
+def _normalise_url(url: str) -> str:
+    """Strip www., lowercase, and collapse double slashes in path for reliable comparison."""
+    url = url.lower().strip()
+    url = url.replace("://www.", "://")   # drop www.
+    scheme, _, rest = url.partition("://")
+    rest = rest.replace("//", "/")
+    return f"{scheme}://{rest}"
+
 def _load_wnn_seen() -> str | None:
     try:
         with open(_WNN_SEEN_FILE, "r") as f:
@@ -176,6 +184,7 @@ def fetch_wnn_story():
     import re
 
     last_seen_url = _load_wnn_seen()
+    last_seen_norm = _normalise_url(last_seen_url) if last_seen_url else None
 
     try:
         r = requests.get(
@@ -192,7 +201,7 @@ def fetch_wnn_story():
         chosen = None
         for item in items:
             url = (item.findtext("link") or item.findtext("guid") or "").strip()
-            if url and url == last_seen_url:
+            if url and last_seen_norm and _normalise_url(url) == last_seen_norm:
                 print(f"  WNN: skipping already-seen story ({url[:60]}...)")
                 continue
             chosen = item
