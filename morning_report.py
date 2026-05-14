@@ -191,17 +191,25 @@ def fetch_wnn_story():
     try:
         r = requests.get(
             "https://world-nuclear-news.org/rss",
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"},
+            params={"_": int(time.time())},   # cache-buster
+            headers={
+                "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Cache-Control":   "no-cache, no-store, must-revalidate",
+                "Pragma":          "no-cache",
+                "Accept":          "application/rss+xml, application/xml, text/xml, */*",
+            },
             timeout=15,
         )
         r.raise_for_status()
         root = ET.fromstring(r.content)
         items = root.findall(".//item")
         print(f"  WNN: {len(items)} item(s) found in feed")
-        for i, it in enumerate(items):
+        for i, it in enumerate(items[:5]):
             u = (it.findtext("link") or it.findtext("guid") or "").strip()
             t = (it.findtext("title") or "").strip()
-            print(f"  WNN: [{i}] norm={_normalise_url(u)}")
+            d = (it.findtext("pubDate") or "").strip()
+            print(f"  WNN: [{i}] {d}")
+            print(f"           norm={_normalise_url(u)}")
             print(f"           title={t[:70]}")
         if not items:
             return None, None
