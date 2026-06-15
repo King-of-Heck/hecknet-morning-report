@@ -1,5 +1,5 @@
 """
-weather_receipt.py
+Morning_Report.py
 ------------------
 Morning Report
 """
@@ -36,7 +36,7 @@ LONGITUDE    = -79.3832
 TIMEZONE     = "America/Toronto"
 
 WEATHER_RETRY_ATTEMPTS = 3    # how many times to try before giving up
-WEATHER_RETRY_WAIT     = 60   # seconds to wait between attempts
+WEATHER_RETRY_WAIT     = 90   # seconds to wait between attempts
 
 MORNING_HOUR = 8
 NOON_HOUR    = 12
@@ -85,10 +85,13 @@ def fetch_weather():
                 print(f"  Retrying in {WEATHER_RETRY_WAIT}s...")
                 time.sleep(WEATHER_RETRY_WAIT)
             else:
-                print(f"  Weather fetch failed after {WEATHER_RETRY_ATTEMPTS} attempts.")
-    raise last_error
+                print(f"  Weather fetch failed after {WEATHER_RETRY_ATTEMPTS} attempts: {e}")
+                print(f"  Continuing without weather data.")
+    return None  # non-fatal — receipt still prints without weather
 
 def extract_slot(data, hour):
+    if data is None:
+        return {"temp": None, "feels": None, "precip": None, "condition": None}
     times = data["hourly"]["time"]
     # Use the date from the first timestamp in the API response
     # to avoid any local date / timezone mismatch
@@ -439,9 +442,12 @@ def build_receipt_image(morning, noon, evening, aww_title, aww_pil, now, printed
         ("EVENING  (6 PM)",  evening),
     ]:
         add(label, bold=True)
-        add(f"  {slot['condition']}")
-        add(f"  Temp:   {slot['temp']}\u00b0C  (feels {slot['feels']}\u00b0C)")
-        add(f"  Precip: {slot['precip']}% chance")
+        if slot["temp"] is None:
+            add("  Weather temporarily unavailable")
+        else:
+            add(f"  {slot['condition']}")
+            add(f"  Temp:   {slot['temp']}\u00b0C  (feels {slot['feels']}\u00b0C)")
+            add(f"  Precip: {slot['precip']}% chance")
         div()
 
     nuclear_header_op_idx = None
