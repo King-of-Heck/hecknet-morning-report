@@ -4,6 +4,9 @@ Morning_Report.py
 Morning Report
 """
 
+import sys
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 import io
 import json
 import os
