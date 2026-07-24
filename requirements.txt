@@ -1,0 +1,4 @@
+beautifulsoup4
+pillow
+pywin32
+requests
