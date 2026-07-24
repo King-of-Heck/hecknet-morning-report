@@ -1,7 +1,13 @@
 """
-Morning_Report.py
-------------------
-Morning Report
+Morning report receipt.
+
+Prints a single receipt each morning: three weather slots for today, the
+latest World Nuclear News story, the Blue Jays fixture, and the first meeting
+on the work calendar.
+
+    python morning_report.py                 print it
+    python morning_report.py --preview       render receipt_preview.png instead
+    python morning_report.py --meeting-test  check the calendar fetch only
 """
 
 import sys
