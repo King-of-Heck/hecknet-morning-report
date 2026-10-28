@@ -1,12 +1,12 @@
- # Morning Report
+# Morning Report
 
 Morning weather, nuclear news, Blue Jays and first-meeting receipt for an XP-80C thermal printer.
 
 Prints one receipt each morning covering:
 
-- three weather slots for the day, from Open Meteo or similar
-- the latest WNN story, scraped from their homepage
-- today's Jays fixture
+- three weather slots for the day, from Open-Meteo
+- the latest World Nuclear News story, scraped from their homepage
+- today's Blue Jays fixture
 - the first meeting on the work calendar
 
 ## The calendar section
